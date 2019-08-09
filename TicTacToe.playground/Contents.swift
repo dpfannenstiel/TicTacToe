@@ -1,5 +1,16 @@
 import Foundation
 
+protocol VictoryContext {
+    /// The starting value to use for the sequence.
+    var start: Int { get }
+
+    /// An end value to limit the sequence. `end` is never an element of the resulting sequence.
+    var end: Int { get }
+
+    /// The amount to step by with each iteration.
+    var strideLength: Int { get }
+}
+
 /// A  TicTacToe Board
 ///
 /// The Board is represented as an immutable structure that depends on the `with(tile:at:)` method to generate new boards with updated values.
@@ -79,6 +90,82 @@ struct TicTacToeBoard {
         }
     }
 
+    /// A victory context for vertical columns.
+    struct VerticalContext: VictoryContext {
+        /// The starting value to use for the sequence.
+        var start: Int
+
+        /// An end value to limit the sequence. `end` is never an element of the resulting sequence.
+        var end: Int
+
+        /// The amount to step by with each iteration.
+        var strideLength: Int
+    }
+
+    /// A victory context for horizonal columns.
+    struct HorizontalContext: VictoryContext {
+        /// The starting value to use for the sequence.
+        var start: Int { return index * sideLength }
+
+        /// An end value to limit the sequence. `end` is never an element of the resulting sequence.
+        var end: Int { return index + sideLength }
+
+        /// The amount to step by with each iteration.
+        var strideLength: Int = 1
+
+        /// The index of the leading cell of the row to be checked by the context
+        var index: Int
+
+        /// Length of a side of a `TicTacToeBoard`
+        var sideLength: Int
+    }
+
+    /// A victory context for the diagonals for a `TicTacToeBoard`
+    struct DiagonalContext: VictoryContext {
+        /// The direction of the diagonal.
+        enum Direction {
+            /// The diagonal going from the top left to the bottom right.
+            case left
+            /// The diagonal going from the top right to the bottom left.
+            case right
+        }
+
+        /// The starting value to use for the sequence.
+        var start: Int {
+            switch diagonal {
+            case .left:
+                return 0
+            case .right:
+                return sideLength - 1
+            }}
+
+        /// An end value to limit the sequence. `end` is never an element of the resulting sequence.
+        var end: Int {
+            switch diagonal {
+            case .left:
+                return sideLength * sideLength
+            case .right:
+                return sideLength * sideLength - (sideLength - 1)
+            }
+        }
+
+        /// The amount to step by with each iteration.
+        var strideLength: Int {
+            switch diagonal {
+            case .left:
+                return sideLength + 1
+            case .right:
+                return sideLength - 1
+            }
+        }
+
+        /// The length of a side of the board.
+        var sideLength: Int
+
+        /// Which direction to check.
+        var diagonal: Direction
+    }
+
     /// The Tic-Tac-Toe board stored as an array of tiles.
     private let board: [Tile]
 
@@ -129,19 +216,6 @@ struct TicTacToeBoard {
         return TicTacToeBoard(boardSide: sideLength, seededBoard: newboard)
     }
 
-    /// Check if there is a victor in any of the vertical columns
-    /// - returns:
-    ///     A `Victor` value for evaluation.
-    private func verticalCheck() -> Victor {
-        for start in 0..<sideLength {
-            let victor = victoryStride(from: start, to: board.count, by: sideLength)
-            if victor != .none {
-                return victor
-            }
-        }
-        return .none
-    }
-
     /// Check the various victory algorithims for a victory.
     ///
     /// - returns:
@@ -162,12 +236,44 @@ struct TicTacToeBoard {
         return .none
     }
 
-    /// Check if there is a victor in any of the horizontal rows
+    /// All the possible victory contexts for the board.
+    var victoryContexts: [VictoryContext] {
+        return (0..<sideLength).map { VerticalContext(start: $0, end: board.count, strideLength: sideLength) } +
+            (0..<sideLength).map { HorizontalContext(index: $0, sideLength: sideLength) } +
+            [
+                DiagonalContext(sideLength: sideLength, diagonal: .left),
+                DiagonalContext(sideLength: sideLength, diagonal: .right)
+            ]
+        }
+
+    /// Check if there is a victor in any of the vertical columns
+    /// - returns:
+    ///     A `Victor` value for evaluation.
+    private func verticalCheck() -> Victor {
+
+        for start in 0..<sideLength {
+            let victor = victoryStride(from: start, to: board.count, by: sideLength)
+            if victor != .none {
+                return victor
+            }
+        }
+        return .none
+    }
+
+   /// Check if there is a victor in any of the horizontal rows
     /// - returns:
     ///     A `Victor` value for evaluation.
     private func horizontalCheck() -> Victor {
-        let chunks = board.chunks(sideLength).map { $0.victor }
-        return Set(chunks).victor
+        for index in 0..<sideLength {
+            let start = index * sideLength
+            let end = start + sideLength
+            let length = 1
+            let victor = victoryStride(from: start, to: end, by: length)
+            if victor != .none{
+                return victor
+            }
+        }
+        return .none
     }
 
     /// Check if there is a victor in either of the diagonals of the board
@@ -200,6 +306,12 @@ struct TicTacToeBoard {
         return stride(from: start, to: end, by: length)
             .map { self.board[$0] }
             .victor
+    }
+
+    private func victoryStride(from context: VictoryContext) -> StrideTo<Int>? {
+        let std = stride(from: context.start, to: context.end, by: context.strideLength)
+        let victor = std.map { self.board[$0] }.victor
+        return (victor == .ex) || (victor == .oh) ? std : nil
     }
 }
 
